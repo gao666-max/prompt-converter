@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>提示词转换器 · 把杂乱日常语转成结构化提示词</title>
+<style>
+/* ========================================================
+   DESIGN TOKENS — 复用 second-brain 的 Blueprint 风格
+   ======================================================== */
+:root {
+  --ink:        #1B2333;
+  --ink-soft:   #5A6478;
+  --ink-faint:  #8A93A6;
+  --ink-line:   #E9EAEE;
+  --ink-hush:   #F7F8FA;
+  --canvas:     #F2F4F8;
+  --card:       #FCFCFD;
+  --ok:         #4B5563;
+  --warn:       #F5A244;
+  --danger:     #e0556a;
+  --accent:     #3b6ed4;
+  --sh-chip:    0 2px 8px rgba(27,35,51,.06);
+  --sh-glass:   0 8px 32px rgba(27,35,51,.08);
+  --sh-lg:      0 16px 48px rgba(27,35,51,.12);
+  --ease:       cubic-bezier(.16, 1, .3, 1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  background: var(--canvas); color: var(--ink);
+  min-height: 100vh; letter-spacing: -.011em;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(27,35,51,.04) 1px, transparent 1px),
+    radial-gradient(ellipse 60% 50% at 20% 20%, rgba(27,35,51,.04) 0%, transparent 70%);
+  background-size: 26px 26px, 100% 100%;
+}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(27,35,51,.12);border-radius:4px}
+::selection{background:rgba(27,35,51,.1)}
+
+/* ========================================================
+   LAYOUT
+   ======================================================== */
+.wrap{max-width:720px;margin:0 auto;padding:32px 18px 60px;position:relative;z-index:1}
+header{margin-bottom:22px}
+header h1{font-size:21px;font-weight:800;letter-spacing:-.02em}
+header p{margin-top:6px;font-size:13px;color:var(--ink-soft)}
+
+.card{background:var(--card);border:1px solid var(--ink-line);border-radius:14px;padding:18px 20px;box-shadow:var(--sh-chip);margin-bottom:16px;transition:box-shadow .2s var(--ease)}
+.card:hover{box-shadow:var(--sh-glass)}
+.card-title{font-size:12px;font-weight:700;color:var(--ink-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:7px}
+.card-title .step{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--ink);color:#fff;font-size:10px;font-weight:800}
+
+textarea{font-family:inherit;font-size:13.5px;letter-spacing:-.005em;outline:none;line-height:1.6}
+.input-area{width:100%;min-height:110px;padding:12px 14px;background:var(--ink-hush);border:1px solid var(--ink-line);border-radius:10px;color:var(--ink);resize:vertical;transition:border-color .18s var(--ease)}
+.input-area:focus{border-color:rgba(27,35,51,.22);background:var(--card);box-shadow:0 0 0 3px rgba(27,35,51,.05)}
+.input-area::placeholder{color:var(--ink-faint)}
+
+.btn{display:inline-flex;align-items:center;gap:5px;height:36px;padding:0 16px;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;border:none;transition:all .18s var(--ease);letter-spacing:-.005em}
+.btn-primary{background:var(--ink);color:#fff;box-shadow:var(--sh-chip)}
+.btn-primary:hover{filter:brightness(.93)}
+.btn-ghost{background:transparent;color:var(--ink-soft);height:32px}
+.btn-ghost:hover{background:var(--ink-hush);color:var(--ink)}
+.btn-row{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+
+.tag{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:rgba(27,35,51,.06);color:var(--ink-soft);letter-spacing:.01em;white-space:nowrap}
+.tag-accent{background:rgba(59,110,212,.1);color:var(--accent)}
+.tag-warn{background:rgba(245,162,68,.12);color:var(--warn)}
+.tag-ok{background:rgba(75,85,99,.1);color:var(--ok)}
+.tag-danger{background:rgba(224,85,106,.1);color:var(--danger)}
+.tag-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+
+/* ========================================================
+   追问区
+   ======================================================== */
+.gap-field{margin-bottom:14px}
+.gap-field label{display:block;font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:6px}
+.gap-field label .miss{color:var(--danger);font-weight:800;margin-left:4px}
+.gap-field textarea{width:100%;min-height:56px;padding:9px 12px;background:var(--ink-hush);border:1px solid var(--ink-line);border-radius:8px;color:var(--ink);resize:vertical;font-size:13px}
+.gap-field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,110,212,.1);background:var(--card)}
+.gap-field .hint{font-size:11px;color:var(--ink-faint);margin-top:4px}
+.all-clear{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:10px;background:rgba(75,85,99,.06);color:var(--ok);font-size:13px;font-weight:600}
+
+/* ========================================================
+   输出区
+   ======================================================== */
+.output-area{width:100%;min-height:220px;padding:14px 16px;background:var(--ink-hush);border:1px solid var(--ink-line);border-radius:10px;color:var(--ink);font-size:13.5px;line-height:1.75;resize:vertical;white-space:pre-wrap;word-break:break-word}
+.output-area .placeholder{color:var(--danger);font-weight:700;background:rgba(224,85,106,.08);padding:1px 5px;border-radius:4px}
+.hidden{display:none!important}
+
+/* ========================================================
+   语音
+   ======================================================== */
+.mic-btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 14px;border-radius:8px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;border:1px solid var(--ink-line);background:var(--card);color:var(--ink-soft);transition:all .18s var(--ease);white-space:nowrap;flex-shrink:0}
+.mic-btn:hover{background:var(--ink-hush);color:var(--ink)}
+.mic-btn.recording{background:rgba(224,85,106,.1);color:var(--danger);border-color:rgba(224,85,106,.35);animation:pulse 1.2s infinite}
+.mic-btn.sm{height:28px;padding:0 10px;font-size:11px;border-radius:6px}
+.gap-input-row{display:flex;gap:8px;align-items:flex-start}
+.gap-input-row textarea{flex:1}
+.voice-hint{font-size:11.5px;color:var(--ink-faint);margin-top:8px}
+.voice-hint b{color:var(--ink-soft);font-weight:700}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(224,85,106,.35)}50%{box-shadow:0 0 0 5px rgba(224,85,106,0)}}
+
+/* ========================================================
+   习惯统计（自我进化）
+   ======================================================== */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.stat-box{background:var(--ink-hush);border-radius:10px;padding:12px 14px;border:1px solid var(--ink-line)}
+.stat-box .num{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.stat-box .lbl{font-size:11px;color:var(--ink-faint);margin-top:3px}
+.insight{font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin-top:12px;padding:12px 14px;background:rgba(59,110,212,.05);border-radius:10px;border:1px solid rgba(59,110,212,.12)}
+.insight b{color:var(--accent)}
+
+/* ========================================================
+   五条铁律
+   ======================================================== */
+.rules-card{border-left:3px solid var(--accent)}
+.rules-list{list-style:none;margin:0}
+.rules-list li{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--ink-line);font-size:13px;line-height:1.6;color:var(--ink-soft)}
+.rules-list li:last-child{border-bottom:none;padding-bottom:0}
+.rules-list .n{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:rgba(59,110,212,.12);color:var(--accent);font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;margin-top:1px}
+.rules-list b{color:var(--ink)}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;background:var(--ink);color:#fff;font-size:12.5px;padding:10px 18px;border-radius:10px;box-shadow:var(--sh-lg);animation:popIn .28s var(--ease);pointer-events:none}
+@keyframes popIn{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+
+@media (max-width:520px){.stats-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>提示词转换器</h1>
+    <p>把你杂乱的日常话，识别意图 → 补缺口 → 转成结构化提示词。</p>
+  </header>
+
+  <!-- 写提示词 · 五条铁律 -->
+  <div class="card rules-card">
+    <div class="card-title"><span class="step">✦</span> 写提示词 · 五条铁律</div>
+    <ol class="rules-list">
+      <li><span class="n">1</span><span><b>给上下文，别给空指令。</b>好提示词 = 背景 + 目标 + 约束 + 验收标准。</span></li>
+      <li><span class="n">2</span><span><b>一次一个目标。</b>别把 5 件事塞进一段语音，拆开说，一个诉求一条。</span></li>
+      <li><span class="n">3</span><span><b>验收标准写清楚。</b>「做完」到底长什么样——能跑 / 能看 / 有数据，AI 才知道何时交差。</span></li>
+      <li><span class="n">4</span><span><b>先问「要解决什么问题」，再问「用什么技术」。</b>别一上来就接 MySQL / 上 RAG。</span></li>
+      <li><span class="n">5</span><span><b>跨窗口用交接文档。</b>背景 + 现状 + 下一步 + 踩坑，比口头转述可靠一百倍。</span></li>
+    </ol>
+  </div>
+
+  <!-- Step 1 输入 -->
+  <div class="card">
+    <div class="card-title"><span class="step">1</span> 输入你的原始想法</div>
+    <textarea id="rawInput" class="input-area" placeholder="例：帮我做一个整理照片的工具，就是那种能自动把废图变成好看的海报的，我最近拍了一堆废片不知道怎么办…"></textarea>
+    <div class="btn-row">
+      <button class="mic-btn" data-target="rawInput" onclick="toggleVoice('rawInput')">语音输入</button>
+      <button class="btn btn-primary" onclick="convert()">识别意图并转换</button>
+      <button class="btn btn-ghost" onclick="clearAll()">清空</button>
+    </div>
+    <div class="voice-hint">按住 <b>Alt</b> 说话，松开自动识别（或点「语音输入」按钮）。</div>
+  </div>
+
+  <!-- Step 2 意图识别 -->
+  <div class="card hidden" id="intentCard">
+    <div class="card-title"><span class="step">2</span> 识别结果</div>
+    <div class="tag-row" id="intentTags"></div>
+  </div>
+
+  <!-- Step 3 补缺口（自动反问） -->
+  <div class="card hidden" id="gapCard">
+    <div class="card-title"><span class="step">3</span> 缺的信息 · 补一下
+      <button class="mic-btn sm" style="margin-left:auto" onclick="speakGaps()">听问题</button>
+    </div>
+    <div id="gapFields"></div>
+    <div class="all-clear hidden" id="allClear">✓ 四个要素都齐了，直接看输出</div>
+  </div>
+
+  <!-- Step 4 结构化输出 -->
+  <div class="card hidden" id="outputCard">
+    <div class="card-title"><span class="step">4</span> 结构化提示词（可编辑）</div>
+    <textarea id="outputArea" class="output-area" spellcheck="false"></textarea>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="copyOutput()">复制提示词</button>
+    </div>
+  </div>
+
+  <!-- 自我进化 · 说话习惯 -->
+  <div class="card hidden" id="statsCard">
+    <div class="card-title"><span class="step">∞</span> 你的说话习惯（自动累积）</div>
+    <div class="stats-grid" id="statsGrid"></div>
+    <div class="insight" id="insightText"></div>
+  </div>
+
+</div>
+
+<script>
+/* ========================================================
+   意图识别库 — 复用佳慧的触发映射表
+   ======================================================== */
+const INTENTS = [
+  { id:'build',    label:'做产品 / 工具 / 代码', frame:'文振熊产品框架 · Edward六层',
+    kw:['帮我做','帮我写','帮我建','帮我搭','帮我改','做一个','写一个','搭建','开发','实现','网页','工具','加一个功能','修一下','代码','脚本','页面'] },
+  { id:'decide',   label:'做决策（要不要 / 选哪个）', frame:'四问框架',
+    kw:['要不要','该不该','纠结','选哪个','选A还是','值不值得','要不要学','要不要买','接不接','该不该做','划算'] },
+  { id:'research', label:'搜索 / 调研', frame:'agent-reach',
+    kw:['搜','查一下','找一下','调研','网上','大家怎么','有没有人','了解','评价','研究一下','看看别人'] },
+  { id:'person',   label:'分析一个人', frame:'人物判断四维度',
+    kw:['这个人','那个人','他好厉害','她好厉害','怎么学的','拆解这个人','研究这个人','他为什么','她为什么'] },
+  { id:'business', label:'分析商业模式 / 公司', frame:'人流钱暗界',
+    kw:['商业模式','怎么赚钱','这个公司','这家公司','分析这个','怎么变现','生意','盈利'] },
+  { id:'learn',    label:'学东西 / 入门', frame:'学习路径',
+    kw:['怎么学','学一下','入门','学习路径','从零学','学什么','从哪学','先学'] },
+  { id:'review',   label:'复盘 / 踩坑', frame:'Mark 三步流程（发生→根因→规则）',
+    kw:['翻车','报错','踩坑','复盘','回顾','总结一下','问题出在','失败','卡住'] },
+  { id:'generic',  label:'通用任务', frame:'通用结构',
+    kw:[] },
+];
+
+/* 四要素缺口检测 */
+const ELEMENTS = {
+  goal:       { name:'目标',   q:'你想达成的具体结果是什么？（一句话，可验证）', re:/(帮我|我想|我要|做一个|写一个|搭建|实现|开发|学习|分析|调研|搜|查|要不要|纠结|复盘|总结|怎么)/ },
+  context:    { name:'背景',   q:'这件事的背景 / 现状是什么？（为什么现在要做）', re:/(因为|现在|目前|背景|我们|我这边|现状|之前|已经|最近)/ },
+  constraint: { name:'约束',   q:'有什么限制或不能做的？（边界，没有就写「无」）', re:/(?<!要)不要|不能|禁止|除了|避免|限制|不许|禁用|别用|别做/ },
+  acceptance: { name:'验收标准', q:'做完长什么样才算交差？（能跑 / 能看 / 有数据）', re:/(能跑|能看|有数据|做完|交付|输出|验证|跑通|演示|能打开|能复现)/ },
+};
+
+let state = { raw:'', intent:null, goals:1, missing:{} };
+
+function convert(){
+  const raw = document.getElementById('rawInput').value.trim();
+  if(!raw){ toast('先输入你的想法'); return; }
+  state.raw = raw;
+
+  // 1. 意图识别
+  state.intent = detectIntent(raw);
+  state.goals = countGoals(raw);
+  renderIntent();
+
+  // 2. 缺口检测
+  state.missing = detectMissing(raw);
+  renderGaps();
+
+  // 3. 生成输出
+  renderOutput();
+
+  // 4. 记录习惯
+  recordStats();
+
+  // 显示卡片
+  document.getElementById('intentCard').classList.remove('hidden');
+  document.getElementById('gapCard').classList.remove('hidden');
+  document.getElementById('outputCard').classList.remove('hidden');
+  document.getElementById('statsCard').classList.remove('hidden');
+  document.getElementById('outputCard').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+/* ---- 意图识别 ---- */
+function detectIntent(text){
+  for(const it of INTENTS){
+    if(it.kw.some(k => text.includes(k))) return it;
+  }
+  return INTENTS[INTENTS.length-1]; // generic
+}
+
+/* 统计诉求数量：按分隔符 + 连接词拆 */
+function countGoals(text){
+  const parts = text.split(/[。；;\n]|还有|另外|顺便|再加上|然后/).map(s=>s.trim()).filter(s=>s.length>2);
+  return Math.max(1, parts.length);
+}
+
+function renderIntent(){
+  const it = state.intent;
+  const multi = state.goals > 1
+    ? `<span class="tag tag-warn">检测到 ${state.goals} 个诉求（建议拆成 ${state.goals} 条分别处理）</span>`
+    : `<span class="tag tag-ok">单一目标 · 很好</span>`;
+  document.getElementById('intentTags').innerHTML =
+    `<span class="tag tag-accent">意图：${it.label}</span>` +
+    `<span class="tag">建议框架：${it.frame}</span>` + multi;
+}
+
+/* ---- 缺口检测 & 追问 ---- */
+function detectMissing(text){
+  const miss = {};
+  for(const [key, el] of Object.entries(ELEMENTS)){
+    if(!el.re.test(text)) miss[key] = '';
+  }
+  return miss;
+}
+
+function renderGaps(){
+  const wrap = document.getElementById('gapFields');
+  const clear = document.getElementById('allClear');
+  const keys = Object.keys(state.missing);
+
+  if(keys.length === 0){
+    wrap.innerHTML = '';
+    clear.classList.remove('hidden');
+    return;
+  }
+  clear.classList.add('hidden');
+
+  wrap.innerHTML = keys.map(key => {
+    const el = ELEMENTS[key];
+    return `
+      <div class="gap-field">
+        <label>${el.name}<span class="miss">（缺）</span></label>
+        <div class="gap-input-row">
+          <textarea id="gap-${key}" data-gap="${key}" placeholder="${el.q}" oninput="onGapInput('${key}', this.value)">${state.missing[key]}</textarea>
+          <button class="mic-btn sm" data-target="gap-${key}" onclick="toggleVoice('gap-${key}')">说</button>
+        </div>
+        <div class="hint">${el.q}</div>
+      </div>`;
+  }).join('');
+}
+
+function onGapInput(key, val){
+  state.missing[key] = val;
+  renderOutput();
+}
+
+/* ---- 结构化输出 ---- */
+function renderOutput(){
+  const it = state.intent;
+  const ctx = state.missing.context !== undefined ? state.missing.context : '（已提供，见原文）';
+  const con = state.missing.constraint !== undefined ? state.missing.constraint : '（已提供，见原文）';
+  const acc = state.missing.acceptance !== undefined ? state.missing.acceptance : '（已提供，见原文）';
+
+  const ph = (v, key) => (v && v.trim()) ? v : `【待填：${key}】`;
+
+  // 目标：原话 + 意图
+  let goalBlock;
+  if(state.goals > 1){
+    goalBlock = `【目标】${state.raw}（共 ${state.goals} 件事，建议拆成 ${state.goals} 条消息分别发）`;
+  } else {
+    goalBlock = `【目标】${state.raw}`;
+  }
+
+  const out =
+`【任务类型】${it.label}
+【建议框架】${it.frame}
+
+${goalBlock}
+【背景】${ph(ctx, '背景')}
+【约束】${ph(con, '约束')}
+【验收标准】${ph(acc, '验收标准')}
+
+—— 技术选型前先回答（规则4：先问解决什么问题，再问用什么技术）——
+1. 要解决什么问题？
+2. 数据多大 / 谁在用 / 要什么效果？
+3. 用什么技术（选最简单能跑通的）
+
+—— 交差标准（规则3）——
+能跑通 / 能打开 / 有数据，就算做完。`;
+
+  const ta = document.getElementById('outputArea');
+  ta.value = out;
+}
+
+/* ---- 复制 ---- */
+function copyOutput(){
+  const ta = document.getElementById('outputArea');
+  ta.select();
+  const ok = document.execCommand('copy');
+  if(ok){ toast('已复制到剪贴板'); }
+  else if(navigator.clipboard){
+    navigator.clipboard.writeText(ta.value).then(()=>toast('已复制到剪贴板')).catch(()=>toast('复制失败，请手动全选复制'));
+  }
+}
+
+/* ---- 语音交互（Web Speech API） ---- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recTarget = null, recStartValue = '', isRecording = false;
+
+function toggleVoice(targetId){
+  isRecording ? stopVoice() : startVoice(targetId);
+}
+
+function startVoice(targetId){
+  if(!SR){ toast('当前浏览器不支持语音识别，请用 Chrome 或 Edge'); return; }
+  const el = document.getElementById(targetId);
+  rec = new SR();
+  rec.lang = 'zh-CN';
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
+  recTarget = targetId;
+  recStartValue = el.value;
+  let finalText = '';
+  rec.onresult = (e)=>{
+    let interim = '';
+    for(let i=e.resultIndex; i<e.results.length; i++){
+      const r = e.results[i];
+      if(r.isFinal) finalText += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    const v = recStartValue + finalText + interim;
+    el.value = v;
+    if(targetId.startsWith('gap-')) onGapInput(targetId.slice(4), v);
+  };
+  rec.onend = ()=>{ isRecording = false; updateMicUI(); };
+  rec.onerror = (e)=>{
+    if(e.error === 'not-allowed') toast('麦克风权限被拒绝，请在地址栏允许麦克风');
+    else if(e.error === 'no-speech') toast('没听到声音，再试一次');
+    isRecording = false; updateMicUI();
+  };
+  try{ rec.start(); }catch(err){ return; }
+  isRecording = true;
+  updateMicUI();
+}
+
+function stopVoice(){
+  if(rec){ try{ rec.stop(); }catch(e){} }
+}
+
+function updateMicUI(){
+  document.querySelectorAll('.mic-btn[data-target]').forEach(b=>{
+    const t = b.getAttribute('data-target');
+    const on = isRecording && recTarget === t;
+    b.classList.toggle('recording', on);
+    if(t === 'rawInput') b.textContent = on ? '录音中…点击停止' : '语音输入';
+  });
+}
+
+function speak(text){
+  if(!('speechSynthesis' in window)){ toast('当前浏览器不支持语音合成'); return; }
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'zh-CN';
+  u.rate = 1;
+  const v = window.speechSynthesis.getVoices();
+  const zh = v.find(x=>x.lang && x.lang.toLowerCase().startsWith('zh'));
+  if(zh) u.voice = zh;
+  window.speechSynthesis.speak(u);
+}
+
+function speakGaps(){
+  const keys = Object.keys(state.missing);
+  if(keys.length === 0){ speak('四个要素都齐了，不用补，直接看输出。'); return; }
+  const parts = keys.map((k,i)=>'第'+(i+1)+'个，'+ELEMENTS[k].name+'：'+ELEMENTS[k].q).join('。');
+  speak('还差 '+keys.length+' 个信息。'+parts);
+}
+
+// 网页内按住 Alt 说话，松开识别
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey){
+    e.preventDefault();
+    if(!isRecording) startVoice('rawInput');
+  }
+});
+document.addEventListener('keyup', (e)=>{
+  if(e.key === 'Alt' && isRecording && recTarget === 'rawInput') stopVoice();
+});
+
+// 预热 TTS 语音列表（首次 getVoices 可能为空）
+if('speechSynthesis' in window){
+  window.speechSynthesis.onvoiceschanged = ()=>window.speechSynthesis.getVoices();
+  window.speechSynthesis.getVoices();
+}
+
+/* ---- 自我进化 · 习惯统计 ---- */
+const LS_KEY = 'prompt-converter-stats';
+
+function recordStats(){
+  let s = loadStats();
+  s.total++;
+  s.intents[state.intent.id] = (s.intents[state.intent.id]||0) + 1;
+  s.totalGoals += state.goals;
+  s.totalMissing += Object.keys(state.missing).length;
+  for(const k of Object.keys(state.missing)) s.missingCount[k] = (s.missingCount[k]||0) + 1;
+  localStorage.setItem(LS_KEY, JSON.stringify(s));
+  renderStats(s);
+}
+
+function loadStats(){
+  try{ return JSON.parse(localStorage.getItem(LS_KEY)) || freshStats(); }
+  catch(e){ return freshStats(); }
+}
+function freshStats(){
+  return { total:0, intents:{}, totalGoals:0, totalMissing:0, missingCount:{} };
+}
+
+function renderStats(s){
+  const avgGoals = s.total ? (s.totalGoals/s.total).toFixed(1) : '0';
+  const avgMiss = s.total ? (s.totalMissing/s.total).toFixed(1) : '0';
+
+  // 最常缺的要素
+  let topMiss = '暂无数据';
+  const mc = s.missingCount;
+  const keys = Object.keys(mc);
+  if(keys.length){
+    keys.sort((a,b)=>mc[b]-mc[a]);
+    topMiss = ELEMENTS[keys[0]].name;
+  }
+  // 最常用意图
+  let topIntent = '暂无数据';
+  const ik = Object.keys(s.intents);
+  if(ik.length){
+    ik.sort((a,b)=>s.intents[b]-s.intents[a]);
+    topIntent = INTENTS.find(i=>i.id===ik[0]).label;
+  }
+
+  document.getElementById('statsGrid').innerHTML =
+    `<div class="stat-box"><div class="num">${s.total}</div><div class="lbl">累计转换次数</div></div>` +
+    `<div class="stat-box"><div class="num">${avgGoals}</div><div class="lbl">平均每次几件事</div></div>` +
+    `<div class="stat-box"><div class="num">${avgMiss}</div><div class="lbl">平均漏几个要素</div></div>`;
+
+  const insight = [];
+  if(s.total >= 3){
+    if(avgMiss >= 2) insight.push(`你平均一次漏 <b>${avgMiss}</b> 个要素——开口前先想「背景 / 目标 / 约束 / 验收」这四样。`);
+    else if(avgMiss >= 1) insight.push(`你平均漏 <b>${avgMiss}</b> 个要素，最常漏的是「<b>${topMiss}</b>」——下次先说这个。`);
+    else insight.push('你很少漏要素，已经习惯结构化表达，很好。');
+    if(avgGoals >= 2) insight.push(`你平均一次说 <b>${avgGoals}</b> 件事——试着拆开，一次一件，AI 会更快更准。`);
+    if(s.total >= 5) insight.push(`你的高频意图是「<b>${topIntent}</b>」。`);
+  } else {
+    insight.push(`再转换 <b>${3-s.total}</b> 次，就能看到你的说话习惯画像。`);
+  }
+  document.getElementById('insightText').innerHTML = insight.join('<br>');
+}
+
+/* ---- 初始化：加载历史统计 ---- */
+function init(){
+  const s = loadStats();
+  if(s.total > 0){
+    renderStats(s);
+    document.getElementById('statsCard').classList.remove('hidden');
+  }
+}
+
+/* ---- 工具 ---- */
+function clearAll(){
+  document.getElementById('rawInput').value = '';
+  state = { raw:'', intent:null, goals:1, missing:{} };
+  ['intentCard','gapCard','outputCard'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+}
+
+function toast(msg){
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 1600);
+}
+
+init();
+</script>
+</body>
+</html>
