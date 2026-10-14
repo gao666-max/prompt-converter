@@ -6,6 +6,10 @@
 ![stack](https://img.shields.io/badge/stack-纯前端-blue)
 ![deps](https://img.shields.io/badge/deps-0-orange)
 
+## 界面预览
+
+![提示词转换器界面](screenshots/ui.png)
+
 ## Problem
 
 佳慧的日常表达（尤其语音）「杂乱」：一段话塞多个诉求、缺背景、缺验收标准。AI 只能猜，结果慢且偏。需要的不是更会「说」，而是一个把日常语 → 结构化提示词的**前置转换器**。
